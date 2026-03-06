@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 type Variant = "light" | "dark" | "esc";
 type IconName =
@@ -416,6 +416,9 @@ const rows: KeySpec[][] = [
 
 export default function Keyboard() {
   const [pressedCodes, setPressedCodes] = useState<Set<string>>(() => new Set());
+  const pressedCodesRef = useRef<Set<string>>(new Set());
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const noiseBufferRef = useRef<AudioBuffer | null>(null);
 
   const supportedCodes = useMemo(() => {
     const codes = new Set<string>();
@@ -425,21 +428,135 @@ export default function Keyboard() {
     return codes;
   }, []);
 
+  const getAudioContext = useCallback(() => {
+    if (typeof window === "undefined") {
+      return null;
+    }
+
+    if (!audioContextRef.current) {
+      audioContextRef.current = new window.AudioContext();
+    }
+
+    if (audioContextRef.current.state === "suspended") {
+      void audioContextRef.current.resume();
+    }
+
+    return audioContextRef.current;
+  }, []);
+
+  const getNoiseBuffer = useCallback((context: AudioContext) => {
+    if (noiseBufferRef.current) {
+      return noiseBufferRef.current;
+    }
+
+    const length = Math.floor(context.sampleRate * 0.06);
+    const noiseBuffer = context.createBuffer(1, length, context.sampleRate);
+    const data = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < length; i += 1) {
+      const decay = 1 - i / length;
+      data[i] = (Math.random() * 2 - 1) * decay;
+    }
+
+    noiseBufferRef.current = noiseBuffer;
+    return noiseBuffer;
+  }, []);
+
+  const playSyntheticKeychronSound = useCallback(
+    (context: AudioContext, type: "down" | "up") => {
+      const now = context.currentTime;
+      const jitter = (Math.random() - 0.5) * 0.08;
+
+      const clickOsc = context.createOscillator();
+      const clickGain = context.createGain();
+      clickOsc.type = "square";
+      clickOsc.frequency.setValueAtTime(type === "down" ? 2200 : 1700, now);
+      clickOsc.frequency.exponentialRampToValueAtTime(type === "down" ? 1200 : 900, now + 0.016);
+      clickGain.gain.setValueAtTime(0.0001, now);
+      clickGain.gain.exponentialRampToValueAtTime(type === "down" ? 0.2 : 0.13, now + 0.002);
+      clickGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.02);
+      clickOsc.connect(clickGain);
+      clickGain.connect(context.destination);
+      clickOsc.start(now);
+      clickOsc.stop(now + 0.03);
+
+      const bodyOsc = context.createOscillator();
+      const bodyGain = context.createGain();
+      bodyOsc.type = "triangle";
+      bodyOsc.frequency.setValueAtTime(type === "down" ? 170 : 145, now);
+      bodyOsc.frequency.exponentialRampToValueAtTime(type === "down" ? 96 : 82, now + 0.05);
+      bodyGain.gain.setValueAtTime(0.0001, now + 0.001);
+      bodyGain.gain.exponentialRampToValueAtTime(type === "down" ? 0.24 : 0.16, now + 0.006);
+      bodyGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.06);
+      bodyOsc.connect(bodyGain);
+      bodyGain.connect(context.destination);
+      bodyOsc.start(now);
+      bodyOsc.stop(now + 0.07);
+
+      const noise = context.createBufferSource();
+      const noiseFilter = context.createBiquadFilter();
+      const noiseGain = context.createGain();
+      noise.buffer = getNoiseBuffer(context);
+      noise.playbackRate.value = Math.max(
+        0.86,
+        Math.min(1.18, type === "down" ? 1.02 + jitter : 0.95 + jitter * 0.7),
+      );
+      noiseFilter.type = "bandpass";
+      noiseFilter.frequency.value = type === "down" ? 1550 : 1250;
+      noiseFilter.Q.value = 0.8;
+      noiseGain.gain.setValueAtTime(0.0001, now);
+      noiseGain.gain.exponentialRampToValueAtTime(type === "down" ? 0.16 : 0.1, now + 0.002);
+      noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.04);
+      noise.connect(noiseFilter);
+      noiseFilter.connect(noiseGain);
+      noiseGain.connect(context.destination);
+      noise.start(now);
+      noise.stop(now + 0.05);
+    },
+    [getNoiseBuffer],
+  );
+
+  const playKeySound = useCallback(
+    (type: "down" | "up") => {
+      const context = getAudioContext();
+
+      if (!context) {
+        return;
+      }
+
+      playSyntheticKeychronSound(context, type);
+    },
+    [getAudioContext, playSyntheticKeychronSound],
+  );
+
+  useEffect(() => {
+    return () => {
+      pressedCodesRef.current = new Set();
+      noiseBufferRef.current = null;
+      if (audioContextRef.current) {
+        void audioContextRef.current.close();
+        audioContextRef.current = null;
+      }
+    };
+  }, []);
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!supportedCodes.has(event.code)) {
         return;
       }
 
+      if (pressedCodesRef.current.has(event.code)) {
+        return;
+      }
+
       setPressedCodes((prev) => {
-        if (prev.has(event.code)) {
-          return prev;
-        }
         const next = new Set(prev);
         next.add(event.code);
+        pressedCodesRef.current = next;
         return next;
       });
 
+      playKeySound("down");
     };
 
     const handleKeyUp = (event: KeyboardEvent) => {
@@ -447,19 +564,24 @@ export default function Keyboard() {
         return;
       }
 
+      if (!pressedCodesRef.current.has(event.code)) {
+        return;
+      }
+
       setPressedCodes((prev) => {
-        if (!prev.has(event.code)) {
-          return prev;
-        }
         const next = new Set(prev);
         next.delete(event.code);
+        pressedCodesRef.current = next;
         return next;
       });
 
+      playKeySound("up");
     };
 
     const handleBlur = () => {
-      setPressedCodes(new Set());
+      const cleared = new Set<string>();
+      pressedCodesRef.current = cleared;
+      setPressedCodes(cleared);
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -471,7 +593,7 @@ export default function Keyboard() {
       window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", handleBlur);
     };
-  }, [supportedCodes]);
+  }, [playKeySound, supportedCodes]);
 
   return (
     <div className="bg-neutral-600 border-2 border-neutral-900 p-3 rounded-[16px]">
