@@ -1,4 +1,6 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 type Variant = "light" | "dark" | "esc";
 type IconName =
@@ -27,6 +29,7 @@ type KeySpec = {
   width?: number;
   variant?: Variant;
   content: ReactNode;
+  bindings?: string[];
 };
 
 function Icon({ name, size = 10 }: { name: IconName; size?: number }) {
@@ -206,7 +209,12 @@ function Icon({ name, size = 10 }: { name: IconName; size?: number }) {
   }
 }
 
-function KeyboardKey({ width = 50, variant = "light", content }: KeySpec) {
+function KeyboardKey({
+  width = 50,
+  variant = "light",
+  content,
+  pressed = false,
+}: KeySpec & { pressed?: boolean }) {
   const outerVariantClass =
     variant === "esc"
       ? "bg-[#F57644]/80"
@@ -222,26 +230,40 @@ function KeyboardKey({ width = 50, variant = "light", content }: KeySpec) {
         : "bg-neutral-100 text-black/70";
 
   return (
-    <div style={{ height: 50, width }} className="flex items-end cursor-pointer">
+    <div style={{ height: 50, width }} className="flex items-end">
       <div
-        className={`relative overflow-hidden h-[50px] rounded-[4px] rounded-t-[12px] border border-neutral-800/60 flex items-start justify-center transition-all duration-100 ${outerVariantClass}`}
+        className={`relative overflow-hidden h-[50px] rounded-[4px] rounded-t-[12px] border border-neutral-800/60 flex items-start justify-center transition-[transform] duration-75 ${outerVariantClass} ${pressed ? "translate-y-[4px]" : "translate-y-0"}`}
         style={{ width }}
       >
         <div
-          className={`relative z-10 h-[37px] rounded-[6px] border border-t-0 border-neutral-800/60 transition-all duration-100 text-[9px] font-medium flex flex-col items-center justify-between p-1 gap-0.5 select-none ${innerVariantClass}`}
-          style={{ width: width - 13 }}
+          className={`relative z-10 rounded-[6px] border border-t-0 border-neutral-800/60 transition-[height,transform] duration-75 text-[9px] font-medium flex flex-col items-center justify-between p-1 gap-0.5 select-none ${innerVariantClass}`}
+          style={{
+            width: width - 13,
+            height: pressed ? 34 : 37,
+            transform: pressed ? "translateY(2px)" : "translateY(0)",
+          }}
         >
           {content}
         </div>
-        <div className="absolute z-0 bottom-0 right-0 h-px w-8 rotate-70 translate-x-3.5 bg-neutral-800/50 transition-all duration-100" />
-        <div className="absolute z-0 bottom-0 left-0 h-px w-8 -rotate-70 -translate-x-3.5 bg-neutral-800/50 transition-all duration-100" />
+        <div
+          className={`absolute z-0 bottom-0 right-0 h-px w-8 rotate-70 translate-x-3.5 bg-neutral-800/50 transition-opacity duration-75 ${pressed ? "opacity-30" : "opacity-100"}`}
+        />
+        <div
+          className={`absolute z-0 bottom-0 left-0 h-px w-8 -rotate-70 -translate-x-3.5 bg-neutral-800/50 transition-opacity duration-75 ${pressed ? "opacity-30" : "opacity-100"}`}
+        />
       </div>
     </div>
   );
 }
 
-const iconFnKey = (icon: IconName, label: string, variant: Variant): KeySpec => ({
+const iconFnKey = (
+  icon: IconName,
+  label: string,
+  variant: Variant,
+  bindings: string[] = [],
+): KeySpec => ({
   variant,
+  bindings,
   content: (
     <>
       <Icon name={icon} />
@@ -250,9 +272,15 @@ const iconFnKey = (icon: IconName, label: string, variant: Variant): KeySpec => 
   ),
 });
 
-const singleTextKey = (text: string, variant: Variant = "light", width = 50): KeySpec => ({
+const singleTextKey = (
+  text: string,
+  variant: Variant = "light",
+  width = 50,
+  bindings: string[] = [],
+): KeySpec => ({
   width,
   variant,
+  bindings,
   content: text,
 });
 
@@ -261,9 +289,11 @@ const stackTextKey = (
   bottom: string,
   variant: Variant = "light",
   width = 50,
+  bindings: string[] = [],
 ): KeySpec => ({
   width,
   variant,
+  bindings,
   content: (
     <>
       <span>{top}</span>
@@ -277,112 +307,172 @@ const iconOnlyKey = (
   variant: Variant = "dark",
   width = 50,
   size = 10,
+  bindings: string[] = [],
 ): KeySpec => ({
   width,
   variant,
+  bindings,
   content: <Icon name={icon} size={size} />,
 });
 
 const rows: KeySpec[][] = [
   [
-    singleTextKey("esc", "esc"),
-    iconFnKey("brightness-down", "F1", "light"),
-    iconFnKey("brightness-up", "F2", "light"),
-    iconFnKey("layout-dashboard", "F3", "light"),
-    iconFnKey("search", "F4", "light"),
-    iconFnKey("microphone", "F5", "dark"),
-    iconFnKey("moon", "F6", "dark"),
-    iconFnKey("player-track-prev", "F7", "dark"),
-    iconFnKey("player-skip-forward", "F8", "dark"),
-    iconFnKey("player-track-next", "F9", "dark"),
-    iconFnKey("volume-3", "F10", "light"),
-    iconFnKey("volume-2", "F11", "light"),
-    iconFnKey("volume", "F12", "light"),
-    iconOnlyKey("frame", "dark", 50, 10),
-    singleTextKey("del", "dark"),
+    singleTextKey("esc", "esc", 50, ["Escape"]),
+    iconFnKey("brightness-down", "F1", "light", ["F1"]),
+    iconFnKey("brightness-up", "F2", "light", ["F2"]),
+    iconFnKey("layout-dashboard", "F3", "light", ["F3"]),
+    iconFnKey("search", "F4", "light", ["F4"]),
+    iconFnKey("microphone", "F5", "dark", ["F5"]),
+    iconFnKey("moon", "F6", "dark", ["F6"]),
+    iconFnKey("player-track-prev", "F7", "dark", ["F7"]),
+    iconFnKey("player-skip-forward", "F8", "dark", ["F8"]),
+    iconFnKey("player-track-next", "F9", "dark", ["F9"]),
+    iconFnKey("volume-3", "F10", "light", ["F10"]),
+    iconFnKey("volume-2", "F11", "light", ["F11"]),
+    iconFnKey("volume", "F12", "light", ["F12"]),
+    iconOnlyKey("frame", "dark", 50, 10, ["PrintScreen"]),
+    singleTextKey("del", "dark", 50, ["Delete"]),
     iconOnlyKey("bulb", "dark", 50, 12),
   ],
   [
-    stackTextKey("~", "`"),
-    stackTextKey("!", "1"),
-    stackTextKey("@", "2"),
-    stackTextKey("#", "3"),
-    stackTextKey("$", "4"),
-    stackTextKey("%", "5"),
-    stackTextKey("^", "6"),
-    stackTextKey("&", "7"),
-    stackTextKey("*", "8"),
-    stackTextKey("(", "9"),
-    stackTextKey(")", "0"),
-    stackTextKey("_", "-"),
-    stackTextKey("+", "="),
-    iconOnlyKey("arrow-narrow-left", "dark", 100, 12),
-    singleTextKey("pgup", "dark"),
+    stackTextKey("~", "`", "light", 50, ["Backquote"]),
+    stackTextKey("!", "1", "light", 50, ["Digit1"]),
+    stackTextKey("@", "2", "light", 50, ["Digit2"]),
+    stackTextKey("#", "3", "light", 50, ["Digit3"]),
+    stackTextKey("$", "4", "light", 50, ["Digit4"]),
+    stackTextKey("%", "5", "light", 50, ["Digit5"]),
+    stackTextKey("^", "6", "light", 50, ["Digit6"]),
+    stackTextKey("&", "7", "light", 50, ["Digit7"]),
+    stackTextKey("*", "8", "light", 50, ["Digit8"]),
+    stackTextKey("(", "9", "light", 50, ["Digit9"]),
+    stackTextKey(")", "0", "light", 50, ["Digit0"]),
+    stackTextKey("_", "-", "light", 50, ["Minus"]),
+    stackTextKey("+", "=", "light", 50, ["Equal"]),
+    iconOnlyKey("arrow-narrow-left", "dark", 100, 12, ["Backspace"]),
+    singleTextKey("pgup", "dark", 50, ["PageUp"]),
   ],
   [
-    singleTextKey("tab", "dark", 75),
-    singleTextKey("Q"),
-    singleTextKey("W"),
-    singleTextKey("E"),
-    singleTextKey("R"),
-    singleTextKey("T"),
-    singleTextKey("Y"),
-    singleTextKey("U"),
-    singleTextKey("I"),
-    singleTextKey("O"),
-    singleTextKey("P"),
-    stackTextKey("{", "["),
-    stackTextKey("}", "]"),
-    stackTextKey("|", "\\", "dark", 75),
-    singleTextKey("pgdn", "dark"),
+    singleTextKey("tab", "dark", 75, ["Tab"]),
+    singleTextKey("Q", "light", 50, ["KeyQ"]),
+    singleTextKey("W", "light", 50, ["KeyW"]),
+    singleTextKey("E", "light", 50, ["KeyE"]),
+    singleTextKey("R", "light", 50, ["KeyR"]),
+    singleTextKey("T", "light", 50, ["KeyT"]),
+    singleTextKey("Y", "light", 50, ["KeyY"]),
+    singleTextKey("U", "light", 50, ["KeyU"]),
+    singleTextKey("I", "light", 50, ["KeyI"]),
+    singleTextKey("O", "light", 50, ["KeyO"]),
+    singleTextKey("P", "light", 50, ["KeyP"]),
+    stackTextKey("{", "[", "light", 50, ["BracketLeft"]),
+    stackTextKey("}", "]", "light", 50, ["BracketRight"]),
+    stackTextKey("|", "\\", "dark", 75, ["Backslash"]),
+    singleTextKey("pgdn", "dark", 50, ["PageDown"]),
   ],
   [
-    singleTextKey("caps lock", "dark", 100),
-    singleTextKey("A"),
-    singleTextKey("S"),
-    singleTextKey("D"),
-    singleTextKey("F"),
-    singleTextKey("G"),
-    singleTextKey("H"),
-    singleTextKey("J"),
-    singleTextKey("K"),
-    singleTextKey("L"),
-    stackTextKey(":", ";"),
-    stackTextKey('"', "'"),
-    singleTextKey("return", "dark", 100),
-    singleTextKey("home", "dark"),
+    singleTextKey("caps lock", "dark", 100, ["CapsLock"]),
+    singleTextKey("A", "light", 50, ["KeyA"]),
+    singleTextKey("S", "light", 50, ["KeyS"]),
+    singleTextKey("D", "light", 50, ["KeyD"]),
+    singleTextKey("F", "light", 50, ["KeyF"]),
+    singleTextKey("G", "light", 50, ["KeyG"]),
+    singleTextKey("H", "light", 50, ["KeyH"]),
+    singleTextKey("J", "light", 50, ["KeyJ"]),
+    singleTextKey("K", "light", 50, ["KeyK"]),
+    singleTextKey("L", "light", 50, ["KeyL"]),
+    stackTextKey(":", ";", "light", 50, ["Semicolon"]),
+    stackTextKey('"', "'", "light", 50, ["Quote"]),
+    singleTextKey("return", "dark", 100, ["Enter"]),
+    singleTextKey("home", "dark", 50, ["Home"]),
   ],
   [
-    singleTextKey("shift", "dark", 123),
-    singleTextKey("Z"),
-    singleTextKey("X"),
-    singleTextKey("C"),
-    singleTextKey("V"),
-    singleTextKey("B"),
-    singleTextKey("N"),
-    singleTextKey("M"),
-    stackTextKey("<", ","),
-    stackTextKey(">", "."),
-    stackTextKey("?", "/"),
-    singleTextKey("shift", "dark", 77),
-    iconOnlyKey("chevron-up", "light", 50, 12),
-    singleTextKey("end", "dark"),
+    singleTextKey("shift", "dark", 123, ["ShiftLeft"]),
+    singleTextKey("Z", "light", 50, ["KeyZ"]),
+    singleTextKey("X", "light", 50, ["KeyX"]),
+    singleTextKey("C", "light", 50, ["KeyC"]),
+    singleTextKey("V", "light", 50, ["KeyV"]),
+    singleTextKey("B", "light", 50, ["KeyB"]),
+    singleTextKey("N", "light", 50, ["KeyN"]),
+    singleTextKey("M", "light", 50, ["KeyM"]),
+    stackTextKey("<", ",", "light", 50, ["Comma"]),
+    stackTextKey(">", ".", "light", 50, ["Period"]),
+    stackTextKey("?", "/", "light", 50, ["Slash"]),
+    singleTextKey("shift", "dark", 77, ["ShiftRight"]),
+    iconOnlyKey("chevron-up", "light", 50, 12, ["ArrowUp"]),
+    singleTextKey("end", "dark", 50, ["End"]),
   ],
   [
-    singleTextKey("ctrl", "dark", 62),
-    singleTextKey("option", "dark", 62),
-    iconOnlyKey("command", "dark", 62, 12),
-    singleTextKey("", "light", 314),
-    iconOnlyKey("command", "dark", 50, 12),
+    singleTextKey("ctrl", "dark", 62, ["ControlLeft"]),
+    singleTextKey("option", "dark", 62, ["AltLeft"]),
+    iconOnlyKey("command", "dark", 62, 12, ["MetaLeft"]),
+    singleTextKey("", "light", 314, ["Space"]),
+    iconOnlyKey("command", "dark", 50, 12, ["MetaRight"]),
     singleTextKey("fn", "dark"),
-    singleTextKey("ctrl", "dark"),
-    iconOnlyKey("chevron-left", "light", 50, 12),
-    iconOnlyKey("chevron-down", "light", 50, 12),
-    iconOnlyKey("chevron-right", "light", 50, 12),
+    singleTextKey("ctrl", "dark", 50, ["ControlRight"]),
+    iconOnlyKey("chevron-left", "light", 50, 12, ["ArrowLeft"]),
+    iconOnlyKey("chevron-down", "light", 50, 12, ["ArrowDown"]),
+    iconOnlyKey("chevron-right", "light", 50, 12, ["ArrowRight"]),
   ],
 ];
 
 export default function Keyboard() {
+  const [pressedCodes, setPressedCodes] = useState<Set<string>>(() => new Set());
+
+  const supportedCodes = useMemo(() => {
+    const codes = new Set<string>();
+    rows.forEach((row) => {
+      row.forEach((key) => key.bindings?.forEach((code) => codes.add(code)));
+    });
+    return codes;
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!supportedCodes.has(event.code)) {
+        return;
+      }
+
+      setPressedCodes((prev) => {
+        if (prev.has(event.code)) {
+          return prev;
+        }
+        const next = new Set(prev);
+        next.add(event.code);
+        return next;
+      });
+
+    };
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (!supportedCodes.has(event.code)) {
+        return;
+      }
+
+      setPressedCodes((prev) => {
+        if (!prev.has(event.code)) {
+          return prev;
+        }
+        const next = new Set(prev);
+        next.delete(event.code);
+        return next;
+      });
+
+    };
+
+    const handleBlur = () => {
+      setPressedCodes(new Set());
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", handleBlur);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", handleBlur);
+    };
+  }, [supportedCodes]);
+
   return (
     <div className="bg-neutral-600 border-2 border-neutral-900 p-3 rounded-[16px]">
       <div className="bg-neutral-800 border border-neutral-900 rounded-[5px] rounded-t-[8px] h-[278px]">
@@ -395,6 +485,8 @@ export default function Keyboard() {
                   width={key.width}
                   variant={key.variant}
                   content={key.content}
+                  bindings={key.bindings}
+                  pressed={Boolean(key.bindings?.some((code) => pressedCodes.has(code)))}
                 />
               ))}
             </div>
